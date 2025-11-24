@@ -6,7 +6,9 @@ ddgs
 fastapi
 uvicorn[standard]
 python-dateutil
-nfl_data_py
-pandas
-matplotlib
+# Data
+nfl_data_py>=0.3.1
+pandas>=2.2.0
+numpy>=1.26.0
+matplotlib>=3.8.0
 gunicorn==21.2.0
