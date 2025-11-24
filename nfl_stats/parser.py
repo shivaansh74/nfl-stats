@@ -139,11 +139,67 @@ def parse_query(query: str) -> Dict[str, Any]:
         intent["is_fantasy_points"] = True
         query = re.sub(r'\b(fantasy\s*points?|fantasy|points?)\b', '', query, flags=re.IGNORECASE)
     
+    # Imports for team/player matching
+    from .data import get_teams
+    from rapidfuzz import process, fuzz
+    teams = get_teams()
+
+    # 2.5 Detect Comparison/Opponent Queries (Moved up to avoid misidentifying opponent as team context)
+    if re.search(r'\b(vs|versus|compare|vs\.|compared\s+to|or|against)\b', query, re.IGNORECASE):
+        # Check if it's a player comparison or player vs team
+        # If there's a team name after "vs/against", it's opponent filtering
+        # Otherwise it's a player comparison
+        
+        # Try to find a team name after vs/against
+        opponent_match = re.search(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?(\w+(?:\s+\w+)*)', query, re.IGNORECASE)
+        found_opponent = False
+        
+        if opponent_match:
+            potential_opponent = opponent_match.group(1).strip()
+            # Check if this matches a team using fuzzy matching
+            
+            # Prepare team names for matching
+            team_names = []
+            team_map = {}
+            for team in teams:
+                nickname = team['name'].split()[-1].lower()
+                full_name = team['name'].lower()
+                abbr = team['abbr'].lower()
+                
+                team_names.append(nickname)
+                team_map[nickname] = team
+                
+                team_names.append(full_name)
+                team_map[full_name] = team
+                
+                team_names.append(abbr)
+                team_map[abbr] = team
+            
+            # Fuzzy match
+            match = process.extractOne(potential_opponent.lower(), team_names, scorer=fuzz.WRatio)
+            if match and match[1] > 85: # High confidence threshold
+                matched_name = match[0]
+                intent["opponent_team"] = team_map[matched_name]
+                # Remove the opponent from query
+                query = re.sub(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?' + re.escape(potential_opponent) + r'\b', '', query, flags=re.IGNORECASE)
+                found_opponent = True
+        
+        if not found_opponent:
+            # It's a player comparison
+            intent["is_comparison"] = True
+            
+            # Split by comparison keywords
+            # Try to extract two player names
+            comparison_split = re.split(r'\b(?:vs\.?|versus|compare|or|compared\s+to|against)\b', query, flags=re.IGNORECASE)
+            if len(comparison_split) >= 2:
+                intent["comparison_players"] = [p.strip() for p in comparison_split[:2] if p.strip()]
+            
+            # Remove comparison keywords from query
+            query = re.sub(r'\b(vs\.?|versus|compare|compared\s+to|or|against)\b', '', query, flags=re.IGNORECASE)
+
     # 3.0 Detect Team Context (Moved up for better intent detection)
     # We check for team names to separate them from player names
     # e.g. "aj brown titans" -> clean_query: "aj brown", team_context: "TEN"
-    from .data import get_teams
-    teams = get_teams()
     intent["team_context"] = None
     
     # Common team nicknames/abbreviations
@@ -216,7 +272,8 @@ def parse_query(query: str) -> Dict[str, Any]:
                 break
     
     # If still no team found, try fuzzy matching for typos (e.g., "cheifs" -> "chiefs")
-    if not intent["team_context"]:
+    # Skip fuzzy matching if we already found an opponent team (to avoid false positives on player names)
+    if not intent["team_context"] and not intent.get("opponent_team"):
         from rapidfuzz import fuzz, process
         
         # Extract potential team words from query (words that might be team names)
@@ -241,7 +298,7 @@ def parse_query(query: str) -> Dict[str, Any]:
                 word,
                 [variant[0] for variant in team_variants],
                 scorer=fuzz.ratio,
-                score_cutoff=65  # 65% similarity threshold to catch common typos
+                score_cutoff=75  # Higher threshold to avoid false positives (e.g. "allens" -> "falcons")
             )
             
             if best_match:
@@ -510,62 +567,9 @@ def parse_query(query: str) -> Dict[str, Any]:
         query = re.sub(r'\b(who|has|have|the|leaders?|top|best|most|highest|lowest|worst|in)\b', '', query, flags=re.IGNORECASE)
     
     # 5.5 Detect Comparison Queries
-    elif re.search(r'\b(vs|versus|compare|vs\.|compared\s+to|or|against)\b', query, re.IGNORECASE):
-        # Check if it's a player comparison or player vs team
-        # If there's a team name after "vs/against", it's opponent filtering
-        # Otherwise it's a player comparison
-        
-        from .data import get_teams
-        teams = get_teams()
-        
-        # Try to find a team name after vs/against
-        opponent_match = re.search(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?(\w+(?:\s+\w+)*)', query, re.IGNORECASE)
-        found_opponent = False
-        
-        if opponent_match:
-            potential_opponent = opponent_match.group(1).strip()
-            # Check if this matches a team
-            # Check if this matches a team using fuzzy matching
-            from rapidfuzz import process, fuzz
-            
-            # Prepare team names for matching
-            team_names = []
-            team_map = {}
-            for team in teams:
-                nickname = team['name'].split()[-1].lower()
-                full_name = team['name'].lower()
-                abbr = team['abbr'].lower()
-                
-                team_names.append(nickname)
-                team_map[nickname] = team
-                
-                team_names.append(full_name)
-                team_map[full_name] = team
-                
-                team_names.append(abbr)
-                team_map[abbr] = team
-            
-            # Fuzzy match
-            match = process.extractOne(potential_opponent.lower(), team_names, scorer=fuzz.WRatio)
-            if match and match[1] > 85: # High confidence threshold
-                matched_name = match[0]
-                intent["opponent_team"] = team_map[matched_name]
-                # Remove the opponent from query
-                query = re.sub(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?' + re.escape(potential_opponent) + r'\b', '', query, flags=re.IGNORECASE)
-                found_opponent = True
-        
-        if not found_opponent:
-            # It's a player comparison
-            intent["is_comparison"] = True
-            
-            # Split by comparison keywords
-            # Try to extract two player names
-            comparison_split = re.split(r'\b(?:vs\.?|versus|compare|or|compared\s+to|against)\b', query, flags=re.IGNORECASE)
-            if len(comparison_split) >= 2:
-                intent["comparison_players"] = [p.strip() for p in comparison_split[:2] if p.strip()]
-            
-            # Remove comparison keywords from query
-            query = re.sub(r'\b(vs\.?|versus|compare|compared\s+to|or|against)\b', '', query, flags=re.IGNORECASE)
+    # 5.5 Detect Comparison Queries (Moved to 2.5)
+    # Logic moved up to handle "Player vs Team" correctly
+    pass
         
 
 
