@@ -76,17 +76,20 @@ def search_player(query: str, limit: int = 5) -> List[Tuple[Dict, float]]:
         
         name_lower = p['display_name'].lower()
         
-        # 1. Exact start match bonus
-        if name_lower.startswith(query_lower):
+        # 1. Exact match bonus (Full Name)
+        if name_lower == query_lower:
+            rel += 100
+        # Exact start match bonus
+        elif name_lower.startswith(query_lower):
             rel += 50
         # Contains match bonus
         elif query_lower in name_lower:
             rel += 20
             
         # 2. Status bonus
-        # Status might be "Active" or boolean? Let's check data.py or assume string
+        # Status might be "Active", "ACT" (nflverse), etc.
         status = str(p.get('status', '')).lower()
-        if status == 'active':
+        if status in ['active', 'act']:
             rel += 30
         elif status: # Some status is better than None
             rel += 10

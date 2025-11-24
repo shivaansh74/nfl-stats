@@ -97,18 +97,54 @@ def process_query(full_query: str, use_spinner: bool = True):
             player_names = intent["comparison_players"]
             console.print(f"[bold cyan]Comparing: {player_names[0]} vs {player_names[1]}[/bold cyan]")
             
+            switched_to_team_mode = False
+            
             # Identify both players
             players = []
             for name in player_names[:2]:
                 entity_type, entity = identify_entity(name)
                 if entity_type == 'player':
                     players.append(entity)
+                elif entity_type == 'team':
+                    # User asked "Player vs Team" but parser missed it
+                    # Treat as Player vs Team query
+                    console.print(f"[dim]Identified '{name}' as a team. Switching to Player vs Team mode...[/dim]")
+                    intent["opponent_team"] = entity
+                    # Remove this team from comparison_players
+                    # The first player is already in 'players' list or will be handled by standard flow
+                    # We need to ensure the first entity is set as the primary entity for the standard flow
+                    
+                    # If we already found the first player
+                    if len(players) == 1:
+                        # We have the player and the team. 
+                        # We can just return from this block and let the standard flow handle it
+                        # But we need to make sure 'clean_query' or 'entity' is set correctly for standard flow.
+                        # The standard flow uses identify_entity(clean_query).
+                        # We should update clean_query to be just the player name.
+                        intent["clean_query"] = players[0]['display_name']
+                        intent["is_comparison"] = False # Disable comparison mode
+                        switched_to_team_mode = True
+                        break
+                    else:
+                        # The first entity was the team? (Unlikely given order, but possible)
+                        # If "Chiefs vs Mahomes", first is team.
+                        # We should set team_context?
+                        intent["team_context"] = entity
+                        # Continue to find player?
+                        continue
                 else:
                     console.print(f"[yellow]Could not find player: {name}[/yellow]")
                     return
             
+            # If we switched to Player vs Team mode
+            if switched_to_team_mode:
+                # Fall through to standard processing
+                pass
+            elif len(players) != 2:
+                console.print("[red]Need exactly 2 players to compare.[/red]")
+                return
+            
             # If players have different positions, try to find better matches
-            # (e.g., both QBs for "mahomes vs allen")
             if len(players) == 2 and players[0].get('position') != players[1].get('position'):
                 # Try to find a player with matching position for the second player
                 from .search import search_player
@@ -193,7 +229,9 @@ def process_query(full_query: str, use_spinner: bool = True):
                     "data": comparison_data,
                     "season": season
                 }
-            return
+            
+            if not switched_to_team_mode:
+                return
         
         # Handle Multi-Player Queries (e.g., "Eagles receivers")
         if intent.get("multi_player"):
@@ -2189,13 +2227,18 @@ def process_query(full_query: str, use_spinner: bool = True):
                                         if p_team:
                                             # Get team ID from abbr
                                             team_abbr = p_team.split('/')[0] if '/' in p_team else p_team
+                                            
+                                            # Try to find team ID
                                             tid = teams_map.get(team_abbr)
+                                            if not tid:
+                                                # Try to match abbr to team list
+                                                for t in all_teams:
+                                                    if t['abbr'] == team_abbr or t['id'] == team_abbr:
+                                                        tid = t['id']
+                                                        break
                                             
                                             if tid:
-
                                                 # We might have fetched it above, but maybe not if no time filter
-                                                # Optimization: Cache schedule locally in loop?
-                                                # get_team_schedule is cached by lru_cache, so it's fast.
                                                 schedule = get_team_schedule(tid, check_year)
                                                 
                                                 # Find this game in schedule
@@ -2208,9 +2251,22 @@ def process_query(full_query: str, use_spinner: bool = True):
                                                         comps = event.get('competitions', [])
                                                         if comps:
                                                             for comp in comps[0].get('competitors', []):
+                                                                comp_id = comp.get('id')
                                                                 comp_abbr = comp.get('team', {}).get('abbreviation')
-                                                                if comp_abbr and comp_abbr != team_abbr:
-                                                                    if comp_abbr == opponent_team['abbr']:
+                                                                comp_name = comp.get('team', {}).get('displayName', '').lower()
+                                                                
+                                                                if comp_id != tid:
+                                                                    # Check if this competitor matches our target opponent
+                                                                    # Check ID, Abbr, Name, Nickname
+                                                                    target_id = opponent_team.get('id')
+                                                                    target_abbr = opponent_team.get('abbr')
+                                                                    target_name = opponent_team.get('name', '').lower()
+                                                                    target_nick = target_name.split()[-1]
+                                                                    
+                                                                    if (comp_id == target_id or 
+                                                                        comp_abbr == target_abbr or 
+                                                                        target_name in comp_name or 
+                                                                        target_nick in comp_name):
                                                                         found_opponent = True
                                                                     break
                                                         break

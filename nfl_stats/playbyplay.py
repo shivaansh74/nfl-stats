@@ -111,38 +111,23 @@ def get_longest_play_espn(espn_id: str, player_name: str, season: int, play_type
 
                     # Determine if home or away
                     is_home = False
-                    if player_team and home_team:
-                        is_home = (player_team == home_team)
-                    elif event.get('competitions', [{}])[0].get('competitors', [{}])[0].get('homeAway') == 'home':
-                         # Fallback if we don't know player team, assume first competitor is reference? 
-                         # No, this is risky. 
-                         # If we don't know player_team, we can't know if they are home or away for sure unless we parse the "vs" or "at".
-                         # "vs" usually means home, "at" means away.
-                         # The event['atVs'] field might help?
-                         pass
+                    # Check if we can determine from event competitions
+                    competitors = event.get('competitions', [{}])[0].get('competitors', [])
+                    for comp in competitors:
+                        if comp.get('team', {}).get('abbreviation') == player_team:
+                            is_home = (comp.get('homeAway') == 'home')
+                            break
                     
-                    # Check atVs
-                    if 'atVs' in event:
-                        if event['atVs'] == 'vs':
-                            # If the event title is "Team A vs Team B", usually Team A is home?
-                            # Or "Player's Team vs Opponent".
-                            # Let's rely on the caller passing player_team for accuracy.
-                            pass
+                    # Fallback: if we don't know player team, check if 'atVs' is present
+                    if not player_team and 'atVs' in event:
+                        # 'vs' usually implies the primary team (which might be the player's team) is home
+                        # But in gamelog, the context is the player.
+                        # If it says "vs", player is Home. If "at" (@), player is Away.
+                        is_home = (event['atVs'] == 'vs')
 
                     # Extract start yardline for visualization
-                    # ESPN usually has 'start': {'yardLine': 25, 'team': {'id': '...'}}
-                    # We need to convert to yardline_100 (distance to opp endzone)
-                    # This is tricky without knowing possession team ID vs yardline team ID.
-                    # For now, let's try to get a rough estimate or leave None.
-                    # If we have 'start' in competitions? No, it's per play.
-                    # The event might have 'start' info?
-                    # Let's check if 'start' key exists in event.
                     yardline_100 = None
-                    if 'start' in event and isinstance(event['start'], dict):
-                        # yardLine is 0-100 usually? Or 0-50?
-                        # ESPN usually uses 0-100 absolute?
-                        # Let's skip for ESPN fallback for now to avoid bad diagrams.
-                        pass
+                    # ESPN data structure for 'start' varies, skipping for now to avoid errors
 
                     longest_play = {
                         'type': current_type,

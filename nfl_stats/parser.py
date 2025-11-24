@@ -525,14 +525,34 @@ def parse_query(query: str) -> Dict[str, Any]:
         if opponent_match:
             potential_opponent = opponent_match.group(1).strip()
             # Check if this matches a team
+            # Check if this matches a team using fuzzy matching
+            from rapidfuzz import process, fuzz
+            
+            # Prepare team names for matching
+            team_names = []
+            team_map = {}
             for team in teams:
                 nickname = team['name'].split()[-1].lower()
-                if potential_opponent.lower() == nickname or potential_opponent.lower() == team['abbr'].lower():
-                    intent["opponent_team"] = team
-                    # Remove the opponent from query
-                    query = re.sub(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?' + re.escape(potential_opponent) + r'\b', '', query, flags=re.IGNORECASE)
-                    found_opponent = True
-                    break
+                full_name = team['name'].lower()
+                abbr = team['abbr'].lower()
+                
+                team_names.append(nickname)
+                team_map[nickname] = team
+                
+                team_names.append(full_name)
+                team_map[full_name] = team
+                
+                team_names.append(abbr)
+                team_map[abbr] = team
+            
+            # Fuzzy match
+            match = process.extractOne(potential_opponent.lower(), team_names, scorer=fuzz.WRatio)
+            if match and match[1] > 85: # High confidence threshold
+                matched_name = match[0]
+                intent["opponent_team"] = team_map[matched_name]
+                # Remove the opponent from query
+                query = re.sub(r'\b(?:vs\.?|versus|against)\s+(?:the\s+)?' + re.escape(potential_opponent) + r'\b', '', query, flags=re.IGNORECASE)
+                found_opponent = True
         
         if not found_opponent:
             # It's a player comparison
