@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.nfl_stats_cache/
+*.log
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env.local
+frontend/.env.production.local
+
+# Test files (optional - keep if you want them in repo)
+test_*.py
+debug_*.py
+check_*.py
+inspect_*.py
+probe_*.py
+fetch_*.py
+parse_*.py
+explore_*.py
+
+# Tracking data (large files)
+nfl_tracking_data/

@@ -1,0 +1,12 @@
+requests
+rich
+fuzzywuzzy
+python-Levenshtein
+ddgs
+fastapi
+uvicorn[standard]
+python-dateutil
+nfl_data_py
+pandas
+matplotlib
+gunicorn==21.2.0
