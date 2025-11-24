@@ -2294,7 +2294,68 @@ def process_query(full_query: str, use_spinner: bool = True):
                          console.print(msg)
 
                 else:
+                    # Default Stats Display
                     stats = get_player_stats(entity['espn_id'], season)
+                    
+                    # Check if returned stats match requested season
+                    # API often defaults to current season for statsSummary
+                    returned_season = stats.get('stats', {}).get('season', {}).get('year')
+                    display_name = stats.get('stats', {}).get('displayName', '')
+                    
+                    # Try to extract year from display name if returned_season is missing
+                    if not returned_season and display_name:
+                        import re
+                        m = re.search(r'20\d{2}', display_name)
+                        if m:
+                            returned_season = int(m.group(0))
+                    
+                    # If we asked for a specific past season but got current/different, 
+                    # OR if no stats returned, try gamelog aggregation
+                    should_fetch_gamelog = False
+                    if season and returned_season and str(returned_season) != str(season):
+                        should_fetch_gamelog = True
+                    elif not stats.get('stats') and season:
+                        should_fetch_gamelog = True
+                        
+                    if should_fetch_gamelog:
+                        console.print(f"[dim]Fetching {season} stats from gamelog...[/dim]")
+                        position = entity.get('position', 'QB')
+                        gamelog = process_player_gamelog(entity['espn_id'], season, season_type=2, position=position)
+                        
+                        if gamelog.get('games'):
+                            agg = aggregate_stats(gamelog['games'], gamelog.get('headers', []))
+                            
+                            # Construct stats object for print_player_profile
+                            new_stats_list = []
+                            headers = gamelog.get('headers', [])
+                            
+                            # Use logic.py's get_headers_for_position if headers missing
+                            if not headers:
+                                from .logic import get_headers_for_position
+                                headers = get_headers_for_position(position)
+                            
+                            for h in headers:
+                                val = ""
+                                if h in agg['averages']:
+                                    # Use averages for rate stats, totals for counting stats
+                                    if h in ['Avg', 'Cmp%', 'Rate', 'QBR', 'Pct']:
+                                        val = f"{agg['averages'][h]:.1f}"
+                                    elif h == 'Sack':
+                                        val = f"{agg['totals'][h]:.1f}"
+                                    else:
+                                        val = f"{agg['totals'][h]:.0f}"
+                                    
+                                    new_stats_list.append({
+                                        "displayName": h,
+                                        "displayValue": val
+                                    })
+                            
+                            # Update stats object
+                            stats['stats'] = {
+                                "displayName": f"{season} Regular Season Stats",
+                                "statistics": new_stats_list
+                            }
+                    
                     print_player_profile(stats)
                 
         elif entity_type == 'team':

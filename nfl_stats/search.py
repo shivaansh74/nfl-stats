@@ -25,6 +25,7 @@ def search_player(query: str, limit: int = 5) -> List[Tuple[Dict, float]]:
         'tyreek': 'tyreek hill',
         'ceedee': 'ceedee lamb',
         'aj': 'aj brown',
+        'allen': 'josh allen',
     }
     
     # Check if query contains any typo (not just exact match)
