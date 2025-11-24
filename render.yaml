@@ -3,7 +3,7 @@ services:
     name: nfl-stats-api
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn api_server:app"
+    startCommand: gunicorn api_server:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
